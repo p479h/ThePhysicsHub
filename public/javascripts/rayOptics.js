@@ -11,10 +11,12 @@ const MAX_LENGTH = 2000;
 const MAX_RAY_LEVEL = 5;
 const EPSILON = 1e-5;
 let scene;
+let beam;
 
 function setup() {
-  bgCanvas = createCanvas(W, H)
-  bgCanvas.parent("simwrapper");
+  bgCanvas = createCanvas(W, H);
+  bgCanvas.isMouseOver = true;
+  //bgCanvas.parent("simwrapper");
 
   simCanvas = createGraphics(Wsim, Hsim)
 
@@ -37,7 +39,7 @@ function setup() {
     createVector(100, 330),
     true, // is convex
   )
-  const beam = new Beam(createVector(250, 450), createVector(-1, -2), 10, 40);
+  beam = new Beam(createVector(250, 450), createVector(-1, -2), 10, 40, rewindArrowButton, moveButton);
   scene = new Scene(
     [
       // new Ray(createVector(300, 300), createVector(-13, 50)),
@@ -86,6 +88,7 @@ class Scene {
   draw(canvas) {
     this.mirrors.forEach(m => m.draw(canvas));
     this.rays.forEach(r => r.draw(canvas));
+    this.rays.forEach(r => r.drawButtons(canvas));
   }
 }
 
@@ -388,13 +391,17 @@ class Ray {
 
 class Beam {
 
-  constructor(origin, direction, numRays = 5, width = 25) {
+  constructor(origin, direction, numRays = 5, width = 25, rewindArrowButton, moveButton) {
     this.origin = origin.copy();
     this.direction = direction.copy().normalize();
     this.numRays = numRays;
     this.width = width;
     this.rays = [];
     this.initRays();
+    this.rewindArrowButton = rewindArrowButton;
+    rewindArrowButton.obj = this;
+    this.moveButton = moveButton;
+    moveButton.obj = this;
   }
 
   updateDirection(x, y) {
@@ -435,4 +442,191 @@ class Beam {
     this.rays.forEach(r => r.draw(canvas, false));
     canvas.pop();
   }
+
+  drawButtons(canvas){
+    this.rewindArrowButton.draw(canvas);
+    this.moveButton.draw(canvas);
+  }
+
+  setOrigin(x, y){
+    this.origin.x = x;
+    this.origin.y = y;
+    this.initRays();
+  }
+
+}
+
+/*Now we can sense when the mouse is close enough. Now we need a funciton to draw the buttons*/
+class beamButton {
+  constructor(x, y, r1, r2, fill, color, highlightFill, normalFill, activeFill, lineWidth, edgeWidth, draw) {
+    this.x = x;
+    this.y = y;
+    this.r1 = r1;
+    this.r2 = r2;
+    this.fill = fill;
+    this.color = color;
+    this.highlightFill = highlightFill;
+    this.normalFill = normalFill;
+    this.activeFill = activeFill;
+    this.lineWidth = lineWidth;
+    this.edgeWidth = edgeWidth;
+    this.drawInside = draw;
+    this.obj = undefined; //Must be set by parent object
+  }
+  draw(canvas) {
+    canvas.translate(this.obj.origin.x, this.obj.origin.y);
+    canvas.rotate(this.obj.direction.heading()+PI/2);
+    this.updateColor(canvas);
+    this.drawBackground(canvas);
+    this.drawInside(canvas);
+    if (this.isMouseOver(canvas)){
+      this.mouseIsOver = true;
+    } else {
+      this.mouseIsOver = false;
+    }
+    canvas.rotate(-this.obj.direction.heading()-PI/2);
+    canvas.translate(-this.obj.origin.x, -this.obj.origin.y);
+    canvas.elt.getContext("2d").beginPath();
+  }
+  isMouseOver(canvas){
+    let correc = pixelDensity(); //Correction factor
+    const xyMouse = invertCoordinates((mouseX-10) * correc, (mouseY-10) * correc, canvas);
+    const xyButton = [this.x, this.y];
+    if ((xyMouse[0] - xyButton[0]) ** 2 + (xyMouse[1] - xyButton[1]) ** 2 <= this.r2 ** 2) {
+      return true;
+    } else {
+      return false;
+    };
+  }
+  updateColor(canvas){
+    if (this.isMouseOver(canvas)) {
+      this.fill = this.highlightFill;
+    } else {
+      this.fill = this.normalFill;
+      return;
+    };
+    if (mouseIsPressed){
+      this.fill = this.activeFill;
+    };
+  }
+  drawBackground(canvas) {
+    const ctx = canvas.elt.getContext("2d");
+    ctx.beginPath();
+    ctx.fillStyle = this.fill;
+    ctx.lineWidth = this.contourWidth;
+    ctx.arc(this.x, this.y, this.r2, 0, PI * 2);
+    ctx.stroke();
+    ctx.fill();
+  }
+}
+
+function drawRewindArrowButton(canvas) {
+  const ctx = canvas.elt.getContext("2d");
+  ctx.beginPath();
+  ctx.lineWidth = this.lineWidth;
+  ctx.strokeStyle = this.color;
+  ctx.beginPath();
+  ctx.moveTo(this.r1 + this.x, this.y);
+  ctx.arc(this.x, this.y, this.r1, 0, 1.5 * PI);
+  ctx.moveTo(this.r1 + this.x - this.r1 / 5, this.y + this.r1 / 5);
+  ctx.lineTo(this.r1 + this.x, this.y);
+  ctx.lineTo(this.r1 + this.x + this.r1 / 5, this.y + this.r1 / 5);
+  ctx.stroke();
+};
+const rewindArrowButton = new beamButton(
+  -20, 0, 9, 12, "lightgreen", "white", "olive", "lightgreen", "darkgreen", 1, .8, drawRewindArrowButton, beam
+);
+
+rewindArrowButton.handleMousePress = function(){
+  this.beingRotated = true;
+};
+
+rewindArrowButton.handleMouseDrag = function(){
+  /*NEEDS TO ROTATE THE THINGy*/
+};
+
+function drawMoveArrowButton(canvas) {
+  const ctx = canvas.elt.getContext("2d");
+  ctx.lineWidth = this.lineWidth;
+  ctx.strokeStyle = this.color;
+  ctx.beginPath();
+  ctx.translate(this.x, this.y);
+  const dh = this.r1 / 5;
+  for (var i = 1; i <= 4; i++) {
+    ctx.moveTo(0, 0);
+    ctx.lineTo(this.r1, 0);
+    ctx.moveTo(this.r1, 0);
+    ctx.lineTo(this.r1 - dh, -dh);
+    ctx.moveTo(this.r1, 0);
+    ctx.lineTo(this.r1 - dh, +dh);
+    ctx.rotate(PI / 2);
+  };
+  ctx.translate(-this.x, -this.y);
+  ctx.stroke();
+}
+const moveButton = new beamButton(
+  20, 0, 9, 12, "lightblue", "white", "cornflowerblue", "lightblue", "darkblue", 1.3, .8, drawMoveArrowButton, beam
+);
+moveButton.handleMousePress = function(){
+  this.initX = mouseX;
+  this.initY = mouseY;
+  this.initOriginX = this.obj.origin.x;
+  this.initOriginY = this.obj.origin.y;
+  this.beingDragged = true;
+}
+moveButton.handleMouseDrag = function(){
+  if (!this.beingDragged){return null;};
+  let dx = mouseX - this.initX;
+  let dy = mouseY - this.initY;
+  this.obj.setOrigin(this.initOriginX + dx, this.initOriginY+dy);
+}
+moveButton.mouseReleased = function(){
+  this.beingDragged  = false;
+}
+rewindArrowButton.mouseReleased = function(){
+  this.beingRotated = false;
+}
+
+function invertCoordinates(x, y, canvas) {
+  const ctx = canvas.elt.getContext("2d");
+  const t = ctx.getTransform(); //transform
+  const M = t.a * t.d - t.b * t.c; //Factor that shows up a lot
+  const xnew = (x * t.d - y * t.c + t.c * t.f - t.d * t.e) / M;
+  const ynew = (-x * t.b + y * t.a + t.b * t.e - t.a * t.f) / M;
+  return [xnew, ynew];
+};
+
+//Now we override the original draw function to include the buttons
+function draw() {
+  background(20);
+  stroke(255)
+  strokeWeight(2)
+  noFill()
+  rect(10, 10, Wsim, Hsim)
+
+  simCanvas.clear()
+  scene.draw(simCanvas);
+  //scene.updateSampleRayDirection(0, mouseX, mouseY);
+  image(simCanvas, 10, 10);
+}
+
+function mousePressed(){
+  if (moveButton.mouseIsOver){
+    moveButton.handleMousePress();
+  } else if (rewindArrowButton.mouseIsOver){
+    rewindArrowButton.handleMousePress();
+  };
+}
+
+function mouseDragged(){
+  if (moveButton.beingDragged){
+    moveButton.handleMouseDrag();
+  } else if (rewindArrowButton.beingRotated){
+    rewindArrowButton.handleMouseDrag();
+  }
+}
+
+function mouseReleased(){
+  moveButton.mouseReleased();
+  rewindArrowButton.mouseReleased();
 }
